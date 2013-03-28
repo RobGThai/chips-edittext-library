@@ -1,19 +1,26 @@
 package com.kpbird.chipsedittextlibrary;
 
+import java.util.ArrayList;
+
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.BitmapDrawable;
 import android.text.Editable;
+import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.ClickableSpan;
 import android.text.style.ImageSpan;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.Pair;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
@@ -22,7 +29,15 @@ import android.widget.TextView;
 
 public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView implements OnItemClickListener {
 
+	public interface OnChipClickListener {
+		public void onChipClick(ChipsMultiAutoCompleteTextview v, int start, int end);
+	}
+
 	private final String TAG = "ChipsMultiAutoCompleteTextview";
+	private OnChipClickListener onChipClickListener;
+	private OnTouchListener onTouchListener;
+	private OnItemClickListener onItemClickListener;
+	private boolean ignoreNotification;
 	
 	/* Constructor */
 	public ChipsMultiAutoCompleteTextview(Context context) {
@@ -42,8 +57,11 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 	}
 	/* set listeners for item click and text change */
 	public void init(Context context){
+		ClickableSpansSupervisor listener =
+				new ClickableSpansSupervisor();
+		super.setOnTouchListener(listener);
 		setTokenizer(new MultiAutoCompleteTextView.CommaTokenizer());
-		setOnItemClickListener(this);
+		super.setOnItemClickListener(this);
 		addTextChangedListener(textWather);
 	}
 	/*TextWatcher, If user type any country name and press comma then following code will regenerate chips */
@@ -51,8 +69,8 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 		
 		@Override
 		public void onTextChanged(CharSequence s, int start, int before, int count) {
-			if(count >=1){
-				if(s.charAt(start) == ',')
+			if(!ignoreNotification){
+				if(TextUtils.indexOf(s.subSequence(start, start + count), ',') > -1)
 					setChips(); // generate chips
 			}
 		}
@@ -67,17 +85,29 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 		{
 			
 			SpannableStringBuilder ssb = new SpannableStringBuilder(getText());
+			ssb.clearSpans();
 			// split string wich comma
 			String chips[] = getText().toString().trim().split(",");
-			int x =0;
+			int x = 0;
 			// loop will generate ImageSpan for every country name separated by comma
 			for(String c : chips){
 				// inflate chips_edittext layout 
 				LayoutInflater lf = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
 				TextView textView = (TextView) lf.inflate(R.layout.chips_edittext, null);
+				int height = getHeight();
+				if(height == 0) {
+					int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+					measure(spec, spec);
+					height = getMeasuredHeight();
+				}
+				textView.setMaxHeight(height - getPaddingTop() - getPaddingBottom());
 				textView.setText(c); // set text
-				int image = ((ChipsAdapter) getAdapter()).getImage(c);
-				textView.setCompoundDrawablesWithIntrinsicBounds(0, 0, image, 0);
+				ChipsAdapter adapter = (ChipsAdapter) getAdapter();
+				int image = 0;
+				if(adapter != null) {
+					image = adapter.getImage(c);
+				}
+				textView.setCompoundDrawablesWithIntrinsicBounds(image, 0, 0, 0);
 				// capture bitmapt of genreated textview
 				int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
 				textView.measure(spec, spec);
@@ -91,14 +121,18 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 				Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
 				textView.destroyDrawingCache();  // destory drawable
 				// create bitmap drawable for imagespan
-				BitmapDrawable bmpDrawable = new BitmapDrawable(viewBmp);
-				bmpDrawable.setBounds(0, 0,bmpDrawable.getIntrinsicWidth(),bmpDrawable.getIntrinsicHeight());
+				BitmapDrawable bmpDrawable = new BitmapDrawable(getResources(), viewBmp);
+				bmpDrawable.setBounds(0, 0, bmpDrawable.getIntrinsicWidth(), bmpDrawable.getIntrinsicHeight());
 				// create and set imagespan 
-				ssb.setSpan(new ImageSpan(bmpDrawable),x ,x + c.length() , Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-				x = x+ c.length() +1;
+				ssb.setSpan(new ImageSpan(bmpDrawable), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+				// create and set clickablespan
+				ssb.setSpan(new ChipsSpan(), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+				x = x + c.length() + 1;
 			}
 			// set chips span 
+			ignoreNotification = true;
 			setText(ssb);
+			ignoreNotification = false;
 			// move cursor to last 
 			setSelection(getText().length());
 		}
@@ -107,14 +141,111 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 	}
 	
 	
+	void dispatchChipClick(ChipsSpan span) {
+		if(onChipClickListener != null) {
+			Spannable spannable = getText();
+			onChipClickListener.onChipClick(this, spannable.getSpanStart(span), spannable.getSpanEnd(span));
+		}
+	}
+	
+	
+	public void setOnChipClickListener(OnChipClickListener l) {
+		onChipClickListener = l;
+	}
+	
 	@Override
 	public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 		ChipsItem ci = (ChipsItem) getAdapter().getItem(position);
 		
 		setChips(); // call generate chips when user select any item from auto complete
+		
+		if(onItemClickListener != null) {
+			onItemClickListener.onItemClick(parent, view, position, id);
+		}
 	}
 	
-		
+	
+	@Override
+	public void setOnTouchListener(OnTouchListener l) {
+		onTouchListener = l;
+	}
 	
 	
+	@Override
+	public void setOnItemClickListener(OnItemClickListener l) {
+		onItemClickListener = l;
+	}
+	
+	
+	public static class ChipsSpan extends ClickableSpan {
+
+		@Override
+		public void onClick(View widget) {
+			ChipsMultiAutoCompleteTextview chipView = (ChipsMultiAutoCompleteTextview) widget;
+			chipView.dispatchChipClick(this);
+		}
+
+	}
+	
+
+	private class ClickableSpansSupervisor implements OnTouchListener {
+		private boolean mIsPressed;
+
+		@Override
+		public boolean onTouch(View v, MotionEvent event) {
+			TextView textView = (TextView) v;
+
+			int action = event.getAction();
+			CharSequence text = textView.getText();
+			if (!(text instanceof Spannable)) return false;
+			Spanned buffer = (Spanned) textView.getText();
+
+			if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+				int x = (int) event.getX();
+				int y = (int) event.getY();
+
+				x -= textView.getTotalPaddingLeft();
+				y -= textView.getTotalPaddingTop();
+
+				x += textView.getScrollX();
+				y += textView.getScrollY();
+
+				Layout layout = textView.getLayout();
+				if(layout == null) return dispatchTouch(false, v, event);
+				ArrayList<ClickableSpan> linkList = new ArrayList<ClickableSpan>();
+
+				int line = layout.getLineForVertical(y);
+				if(x < layout.getLineWidth(line)) {
+					int off = layout.getOffsetForHorizontal(line, x);
+					ClickableSpan[] links = buffer.getSpans(off, off, ClickableSpan.class);
+					for(ClickableSpan link: links) {
+						linkList.add(link);
+					}
+				}
+
+				if (linkList.size() > 0) {
+					ClickableSpan link = linkList.get(linkList.size() - 1);
+					if (action == MotionEvent.ACTION_UP && mIsPressed) {
+						mIsPressed = false;
+						link.onClick(textView);
+						return dispatchTouch(true, v, event);
+					} else if (action == MotionEvent.ACTION_DOWN) {
+						mIsPressed = true;
+						return dispatchTouch(true, v, event);
+					}
+				}
+
+				mIsPressed = false;
+			}
+
+			return dispatchTouch(false, v, event);
+		}
+
+		private boolean dispatchTouch(boolean ret, View v, MotionEvent event) {
+			if(onTouchListener != null) {
+				return ret || onTouchListener.onTouch(v, event);
+			}
+			return ret;
+		}
+	}
 }
