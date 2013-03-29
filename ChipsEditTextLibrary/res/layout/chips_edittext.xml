@@ -5,5 +5,6 @@
     android:layout_height="wrap_content"
     android:drawablePadding="2dp"
     android:gravity="center"
+    android:minHeight="34dip"
     android:padding="2dp"
     android:textSize="18sp" />
