@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.text.Editable;
 import android.text.Layout;
@@ -27,13 +28,16 @@ import android.widget.AdapterView.OnItemClickListener;
 import android.widget.MultiAutoCompleteTextView;
 import android.widget.TextView;
 
-public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView implements OnItemClickListener {
+public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView {
 
 	public interface OnChipClickListener {
 		public void onChipClick(ChipsMultiAutoCompleteTextview v, int start, int end);
 	}
 
 	private final String TAG = "ChipsMultiAutoCompleteTextview";
+	private int chipsBackground;
+	private int chipsDrawableLeft, chipsDrawableTop, chipsDrawableRight, chipsDrawableBottom;
+	private int chipsTextColor;
 	private OnChipClickListener onChipClickListener;
 	private OnTouchListener onTouchListener;
 	private OnItemClickListener onItemClickListener;
@@ -56,22 +60,35 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 		init(context);
 	}
 	/* set listeners for item click and text change */
-	public void init(Context context){
-		ClickableSpansSupervisor listener =
-				new ClickableSpansSupervisor();
-		super.setOnTouchListener(listener);
+	private void init(Context context){
+		chipsBackground = R.drawable.chips_edittext_gb;
+		chipsDrawableLeft = R.drawable.android;
+		chipsTextColor = Color.BLACK;
+		super.setOnTouchListener(new ClickableSpansSupervisor());
 		setTokenizer(new MultiAutoCompleteTextView.CommaTokenizer());
-		super.setOnItemClickListener(this);
-		addTextChangedListener(textWather);
+		super.setOnItemClickListener(oicl);
+		addTextChangedListener(tw);
 	}
+	private OnItemClickListener oicl = new OnItemClickListener() {
+		@Override
+		public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+			ChipsItem ci = (ChipsItem) getAdapter().getItem(position);
+			
+			generateChips(); // call generate chips when user select any item from auto complete
+			
+			if(onItemClickListener != null) {
+				onItemClickListener.onItemClick(parent, view, position, id);
+			}
+		}
+	};
 	/*TextWatcher, If user type any country name and press comma then following code will regenerate chips */
-	private TextWatcher textWather = new TextWatcher() {
+	private TextWatcher tw = new TextWatcher() {
 		
 		@Override
 		public void onTextChanged(CharSequence s, int start, int before, int count) {
 			if(!ignoreNotification){
 				if(TextUtils.indexOf(s.subSequence(start, start + count), ',') > -1)
-					setChips(); // generate chips
+					generateChips(); // generate chips
 			}
 		}
 		@Override
@@ -80,7 +97,7 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 		public void afterTextChanged(Editable s) {}
 	};
 	/*This function has whole logic for chips generate*/
-	public void setChips(){
+	public void generateChips(){
 		if(getText().toString().contains(",")) // check comman in string
 		{
 			
@@ -94,6 +111,17 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 				// inflate chips_edittext layout 
 				LayoutInflater lf = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
 				TextView textView = (TextView) lf.inflate(R.layout.chips_edittext, null);
+				textView.setBackgroundResource(chipsBackground);
+				ChipsAdapter adapter = (ChipsAdapter) getAdapter();
+				int leftImage = chipsDrawableLeft;
+				if(adapter != null) {
+					leftImage = adapter.getImage(c);
+				}
+				textView.setCompoundDrawablesWithIntrinsicBounds(leftImage,
+						chipsDrawableTop, chipsDrawableRight, chipsDrawableBottom);
+				textView.setTextColor(chipsTextColor);
+				textView.setText(c); // set text
+				// set max height
 				int height = getHeight();
 				if(height == 0) {
 					int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
@@ -101,13 +129,7 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 					height = getMeasuredHeight();
 				}
 				textView.setMaxHeight(height - getPaddingTop() - getPaddingBottom());
-				textView.setText(c); // set text
-				ChipsAdapter adapter = (ChipsAdapter) getAdapter();
-				int image = 0;
-				if(adapter != null) {
-					image = adapter.getImage(c);
-				}
-				textView.setCompoundDrawablesWithIntrinsicBounds(image, 0, 0, 0);
+
 				// capture bitmapt of genreated textview
 				int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
 				textView.measure(spec, spec);
@@ -120,21 +142,22 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 				Bitmap cacheBmp = textView.getDrawingCache();
 				Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
 				textView.destroyDrawingCache();  // destory drawable
+
 				// create bitmap drawable for imagespan
 				BitmapDrawable bmpDrawable = new BitmapDrawable(getResources(), viewBmp);
 				bmpDrawable.setBounds(0, 0, bmpDrawable.getIntrinsicWidth(), bmpDrawable.getIntrinsicHeight());
+
 				// create and set imagespan 
 				ssb.setSpan(new ImageSpan(bmpDrawable), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
 				// create and set clickablespan
 				ssb.setSpan(new ChipsSpan(), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 				x = x + c.length() + 1;
 			}
 			// set chips span 
 			ignoreNotification = true;
-			setText(ssb);
+			setTextKeepState(ssb);
 			ignoreNotification = false;
-			// move cursor to last 
-			setSelection(getText().length());
 		}
 		
 		
@@ -149,19 +172,26 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 	}
 	
 	
-	public void setOnChipClickListener(OnChipClickListener l) {
-		onChipClickListener = l;
+	public void setChipsBackgroundResource(int resid) {
+		chipsBackground = resid;
 	}
 	
-	@Override
-	public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-		ChipsItem ci = (ChipsItem) getAdapter().getItem(position);
-		
-		setChips(); // call generate chips when user select any item from auto complete
-		
-		if(onItemClickListener != null) {
-			onItemClickListener.onItemClick(parent, view, position, id);
-		}
+	
+	public void setChipsCompoundDrawablesWithIntrinsicBounds(int left, int top, int right, int bottom) {
+		chipsDrawableLeft = left;
+		chipsDrawableTop = top;
+		chipsDrawableRight = right;
+		chipsDrawableBottom = bottom;
+	}
+	
+	
+	public void setChipsTextColor(int color) {
+		chipsTextColor = color;
+	}
+	
+	
+	public void setOnChipClickListener(OnChipClickListener l) {
+		onChipClickListener = l;
 	}
 	
 	
@@ -177,7 +207,7 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView im
 	}
 	
 	
-	public static class ChipsSpan extends ClickableSpan {
+	static class ChipsSpan extends ClickableSpan {
 
 		@Override
 		public void onClick(View widget) {
