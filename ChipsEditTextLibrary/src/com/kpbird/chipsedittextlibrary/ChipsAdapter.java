@@ -45,12 +45,15 @@ public class ChipsAdapter extends BaseAdapter implements Filterable {
 
 	public int getImage(String title){
 		Log.i(TAG, "Title " + title);
+		String trimmed = title.trim().toLowerCase();
 		int img = R.drawable.android;
-		for(int i=0;i<items.size();i++){
-			if(items.get(i).getTitle().trim().toLowerCase().startsWith(title.trim().toLowerCase())){
-				img = items.get(i).getImageid();
-				Log.i(TAG, "Found " + title);
-				break;
+		if(trimmed.length() > 0){
+			for(ChipsItem item: items){
+				if(item.getTitle().trim().toLowerCase().startsWith(trimmed)){
+					img = item.getImageid();
+					Log.i(TAG, "Found " + title);
+					break;
+				}
 			}
 		}
 		
@@ -107,11 +110,11 @@ public class ChipsAdapter extends BaseAdapter implements Filterable {
 
 				suggestions.clear();
 				try {
-					for (int i = 0; i < items.size(); i++) {
+					for (ChipsItem item: items) {
 
-						if (items.get(i).getTitle().toLowerCase().startsWith(constraint.toString().toLowerCase())) {
-//							Log.d("filter", "Found --- " + items.get(i).getTitle());
-							suggestions.add(items.get(i));
+						if (item.getTitle().toLowerCase().startsWith(constraint.toString().toLowerCase())) {
+//							Log.d("filter", "Found --- " + item.getTitle());
+							suggestions.add(item);
 						}
 
 					}

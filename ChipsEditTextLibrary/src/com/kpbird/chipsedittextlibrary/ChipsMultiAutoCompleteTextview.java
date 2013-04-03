@@ -40,7 +40,7 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView {
 	private int chipsTextColor;
 	private OnChipClickListener onChipClickListener;
 	private OnTouchListener onTouchListener;
-	private OnItemClickListener onItemClickListener;
+//	private OnItemClickListener onItemClickListener;
 	private boolean ignoreNotification;
 	
 	/* Constructor */
@@ -60,107 +60,149 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView {
 		init(context);
 	}
 	/* set listeners for item click and text change */
-	private void init(Context context){
+	private void init(Context context) {
 		chipsBackground = R.drawable.chips_edittext_gb;
 		chipsDrawableLeft = R.drawable.android;
 		chipsTextColor = Color.BLACK;
 		super.setOnTouchListener(new ClickableSpansSupervisor());
 		setTokenizer(new MultiAutoCompleteTextView.CommaTokenizer());
-		super.setOnItemClickListener(oicl);
+//		super.setOnItemClickListener(oicl);
 		addTextChangedListener(tw);
 	}
-	private OnItemClickListener oicl = new OnItemClickListener() {
+/*	private OnItemClickListener oicl = new OnItemClickListener() {
 		@Override
 		public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 			ChipsItem ci = (ChipsItem) getAdapter().getItem(position);
 			
-			generateChips(); // call generate chips when user select any item from auto complete
+			updateChips(); // call generate chips when user select any item from auto complete
 			
 			if(onItemClickListener != null) {
 				onItemClickListener.onItemClick(parent, view, position, id);
 			}
 		}
-	};
+	};*/
 	/*TextWatcher, If user type any country name and press comma then following code will regenerate chips */
 	private TextWatcher tw = new TextWatcher() {
 		
 		@Override
 		public void onTextChanged(CharSequence s, int start, int before, int count) {
-			if(!ignoreNotification){
-				if(TextUtils.indexOf(s.subSequence(start, start + count), ',') > -1)
-					generateChips(); // generate chips
+			if(!ignoreNotification) {
+				if(TextUtils.indexOf(s.subSequence(start, start + count), ',') > -1) {
+					updateChips(); // generate chips
+				}
 			}
 		}
 		@Override
-		public void beforeTextChanged(CharSequence s, int start, int count,int after) {}
+		public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+			if(!ignoreNotification) {
+				if(after == 0 && getSelectionStart() == getSelectionEnd()) {
+					if(s instanceof SpannableStringBuilder) {
+						SpannableStringBuilder ssb = (SpannableStringBuilder) s;
+						ChipsSpan[] spans = ssb.getSpans(start, start + count, ChipsSpan.class);
+						if(spans.length > 0) {
+							boolean old = ignoreNotification;
+							ignoreNotification = true;
+
+							ssb.replace(start + count, start + count, s.toString(), start, start + count);
+
+							ignoreNotification = old;
+						}
+					}
+				}
+			}
+		}
 		@Override
 		public void afterTextChanged(Editable s) {}
 	};
 	/*This function has whole logic for chips generate*/
-	public void generateChips(){
-		if(getText().toString().contains(",")) // check comman in string
+	public void updateChips() {
+		String csv = getText().toString();
+		if(csv.contains(",")) // check comman in string
 		{
-			
-			SpannableStringBuilder ssb = new SpannableStringBuilder(getText());
-			ssb.clearSpans();
-			// split string wich comma
-			String chips[] = getText().toString().trim().split(",");
-			int x = 0;
+			boolean old = ignoreNotification;
+			ignoreNotification = true;
+
+			if(csv.endsWith(",")) {
+				getText().append(" ");
+				csv = getText().toString();
+			}
+
+			SpannableStringBuilder ssb = new SpannableStringBuilder();
+			// split string with comma
+			String[] values = csv.split(",");
+			int length = values.length;
 			// loop will generate ImageSpan for every country name separated by comma
-			for(String c : chips){
-				// inflate chips_edittext layout 
-				LayoutInflater lf = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
-				TextView textView = (TextView) lf.inflate(R.layout.chips_edittext, null);
-				textView.setBackgroundResource(chipsBackground);
-				ChipsAdapter adapter = (ChipsAdapter) getAdapter();
-				int leftImage = chipsDrawableLeft;
-				if(adapter != null) {
-					leftImage = adapter.getImage(c);
+			for(int i = 0; i < length; i++) {
+				String value = values[i];
+				int start = ssb.length();
+				if(start > 0) {
+					ssb.append(",");
+					start = start + 1;
 				}
-				textView.setCompoundDrawablesWithIntrinsicBounds(leftImage,
-						chipsDrawableTop, chipsDrawableRight, chipsDrawableBottom);
-				textView.setTextColor(chipsTextColor);
-				textView.setText(c); // set text
-				// set max height
-				int height = getHeight();
-				if(height == 0) {
-					int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
-					measure(spec, spec);
-					height = getMeasuredHeight();
+
+				String trimmed = value.trim();
+				if(trimmed.length() == 0) {
+					trimmed = value;
 				}
-				textView.setMaxHeight(height - getPaddingTop() - getPaddingBottom());
-
-				// capture bitmapt of genreated textview
-				int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
-				textView.measure(spec, spec);
-				textView.layout(0, 0, textView.getMeasuredWidth(), textView.getMeasuredHeight());
-				Bitmap b = Bitmap.createBitmap(textView.getWidth(), textView.getHeight(),Bitmap.Config.ARGB_8888);
-				Canvas canvas = new Canvas(b);
-				canvas.translate(-textView.getScrollX(), -textView.getScrollY());
-				textView.draw(canvas);
-				textView.setDrawingCacheEnabled(true);
-				Bitmap cacheBmp = textView.getDrawingCache();
-				Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
-				textView.destroyDrawingCache();  // destory drawable
-
-				// create bitmap drawable for imagespan
-				BitmapDrawable bmpDrawable = new BitmapDrawable(getResources(), viewBmp);
-				bmpDrawable.setBounds(0, 0, bmpDrawable.getIntrinsicWidth(), bmpDrawable.getIntrinsicHeight());
+				ssb.append(trimmed);
+				if(i == length - 1 && value.equals(" ")) {
+					continue;
+				}
 
 				// create and set imagespan 
-				ssb.setSpan(new ImageSpan(bmpDrawable), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+				ssb.setSpan(new ImageSpan(generateDrawable(trimmed)), start, start + trimmed.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 
 				// create and set clickablespan
-				ssb.setSpan(new ChipsSpan(), x, x + c.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-				x = x + c.length() + 1;
+				ssb.setSpan(new ChipsSpan(), start, start + trimmed.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 			}
 			// set chips span 
-			ignoreNotification = true;
 			setTextKeepState(ssb);
-			ignoreNotification = false;
+
+			ignoreNotification = old;
 		}
-		
-		
+	}
+	
+	
+	private BitmapDrawable generateDrawable(String text) {
+		// inflate chips_edittext layout 
+		LayoutInflater lf = (LayoutInflater) getContext().getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
+		TextView textView = (TextView) lf.inflate(R.layout.chips_edittext, null);
+		textView.setBackgroundResource(chipsBackground);
+		ChipsAdapter adapter = (ChipsAdapter) getAdapter();
+		int leftImage = chipsDrawableLeft;
+		if(adapter != null) {
+			leftImage = adapter.getImage(text);
+		}
+		textView.setCompoundDrawablesWithIntrinsicBounds(leftImage,
+				chipsDrawableTop, chipsDrawableRight, chipsDrawableBottom);
+		textView.setTextColor(chipsTextColor);
+		textView.setText(text); // set text
+		// set max height
+		int height = getHeight();
+		if(height == 0) {
+			int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+			measure(spec, spec);
+			height = getMeasuredHeight();
+		}
+		textView.setMaxHeight(height - getPaddingTop() - getPaddingBottom());
+
+		// capture bitmapt of genreated textview
+		int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+		textView.measure(spec, spec);
+		textView.layout(0, 0, textView.getMeasuredWidth(), textView.getMeasuredHeight());
+		Bitmap b = Bitmap.createBitmap(textView.getWidth(), textView.getHeight(),Bitmap.Config.ARGB_8888);
+		Canvas canvas = new Canvas(b);
+		canvas.translate(-textView.getScrollX(), -textView.getScrollY());
+		textView.draw(canvas);
+		textView.setDrawingCacheEnabled(true);
+		Bitmap cacheBmp = textView.getDrawingCache();
+		Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
+		textView.destroyDrawingCache();  // destory drawable
+
+		// create bitmap drawable for imagespan
+		BitmapDrawable bmpDrawable = new BitmapDrawable(getResources(), viewBmp);
+		bmpDrawable.setBounds(0, 0, bmpDrawable.getIntrinsicWidth(), bmpDrawable.getIntrinsicHeight());
+		return bmpDrawable;
 	}
 	
 	
@@ -201,10 +243,10 @@ public class ChipsMultiAutoCompleteTextview extends MultiAutoCompleteTextView {
 	}
 	
 	
-	@Override
+/*	@Override
 	public void setOnItemClickListener(OnItemClickListener l) {
 		onItemClickListener = l;
-	}
+	}*/
 	
 	
 	static class ChipsSpan extends ClickableSpan {
