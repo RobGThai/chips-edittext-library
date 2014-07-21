@@ -1,0 +1,7 @@
+# generated files
+bin/
+gen/
+build/
+
+# project file
+*.iml
